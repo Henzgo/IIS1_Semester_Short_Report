@@ -43,9 +43,14 @@ def load_texts(path, record_ids):
     return texts
 
 
-def draw_heatmap(axis, matrix, alphabet, title, max_value):
+def difference_matrix(query_matrix, document_matrix):
+    """Berechne pro Bigramm das Query-Gewicht minus das Dokumentgewicht."""
+    return query_matrix - document_matrix
+
+
+def draw_heatmap(axis, matrix, alphabet, title, max_value, *, min_value=0, cmap="viridis"):
     """Zeichne eine Matrix mit Zeichenbeschriftung auf beiden Achsen."""
-    image = axis.imshow(matrix, cmap="viridis", vmin=0, vmax=max_value)
+    image = axis.imshow(matrix, cmap=cmap, vmin=min_value, vmax=max_value)
     positions = range(len(alphabet))
     axis.set_xticks(positions, labels=list(alphabet), fontsize=7)
     axis.set_yticks(positions, labels=list(alphabet), fontsize=7)
@@ -60,6 +65,8 @@ def save_comparison(path, row, query_vector, document_vector, alphabet, query_te
     size = len(alphabet)
     query_matrix = query_vector.reshape(size, size)
     document_matrix = document_vector.reshape(size, size)
+    difference = difference_matrix(query_matrix, document_matrix)
+    difference_limit = float(np.abs(difference).max()) or 1.0
     max_value = max(float(query_matrix.max()), float(document_matrix.max()))
     if max_value == 0:
         max_value = 1
@@ -67,10 +74,11 @@ def save_comparison(path, row, query_vector, document_vector, alphabet, query_te
     query_lines = wrap(query_text, width=64)
     document_lines = wrap(document_text, width=64)
     text_height = 0.35 + 0.16 * max(len(query_lines), len(document_lines))
-    figure = plt.figure(figsize=(12, 6 + text_height))
+    figure = plt.figure(figsize=(17.5, 6 + text_height))
     layout = figure.add_gridspec(
-        3, 3, width_ratios=[1, 1, 0.045], height_ratios=[4.6, text_height, 0.3],
-        left=0.08, right=0.92, bottom=0.04, top=0.94, hspace=0.30, wspace=0.27,
+        3, 5, width_ratios=[1, 1, 0.045, 1, 0.045],
+        height_ratios=[4.6, text_height, 0.3],
+        left=0.055, right=0.94, bottom=0.04, top=0.94, hspace=0.30, wspace=0.23,
     )
     query_axis = figure.add_subplot(layout[0, 0])
     document_axis = figure.add_subplot(layout[0, 1])
@@ -80,7 +88,16 @@ def save_comparison(path, row, query_vector, document_vector, alphabet, query_te
     image = draw_heatmap(document_axis, document_matrix, alphabet, document_title, max_value)
 
     colorbar_axis = figure.add_subplot(layout[0, 2])
-    figure.colorbar(image, cax=colorbar_axis, label="Normalized bigram weight")
+    figure.colorbar(image, cax=colorbar_axis, ticklocation="left")
+    colorbar_axis.set_title("Bigram\nweight", fontsize=8)
+
+    difference_axis = figure.add_subplot(layout[0, 3])
+    difference_image = draw_heatmap(
+        difference_axis, difference, alphabet, "Difference (query − document)",
+        difference_limit, min_value=-difference_limit, cmap="RdBu_r",
+    )
+    difference_colorbar = figure.add_subplot(layout[0, 4])
+    figure.colorbar(difference_image, cax=difference_colorbar, label="Weight difference")
 
     for column, title, lines in (
         (0, "Query text", query_lines),
@@ -97,7 +114,7 @@ def save_comparison(path, row, query_vector, document_vector, alphabet, query_te
 
     score = row["cosine_similarity"]
     caption = f"Cosine similarity: {score}   |   Rank: {row['rank']}"
-    caption_axis = figure.add_subplot(layout[2, :2])
+    caption_axis = figure.add_subplot(layout[2, :])
     caption_axis.set_axis_off()
     caption_axis.text(0.5, 0.5, caption, ha="center", va="center", fontsize=13)
     try:
